@@ -57,7 +57,7 @@ export function DashboardShell({ initialSnapshot }: DashboardShellProps) {
       });
 
       if (nextSnapshot.missingAppId) {
-        toast.error("ESTAT_APP_ID が未設定です。README の設定手順を確認してください。");
+        toast.warning("ESTAT_APP_ID が未設定のため、e-Stat 系の一部指標は取得できません。");
         return;
       }
 
@@ -79,7 +79,6 @@ export function DashboardShell({ initialSnapshot }: DashboardShellProps) {
       <DashboardHeader
         isRefreshing={isPending}
         lastUpdatedAt={snapshot.lastUpdatedAt}
-        missingAppId={snapshot.missingAppId}
         onRefresh={handleRefresh}
       />
 
@@ -88,10 +87,11 @@ export function DashboardShell({ initialSnapshot }: DashboardShellProps) {
           <CardContent className="p-5">
             <div className="space-y-2">
               <div className="text-sm font-semibold text-rose-900">
-                e-Stat の appId 設定が必要です
+                e-Stat の appId を設定すると対象指標を拡張できます
               </div>
               <div className="text-sm leading-6 text-rose-800">
-                .env に <code className="rounded bg-white px-1.5 py-0.5">ESTAT_APP_ID</code> を設定してください。
+                公式サイトから直接取得する指標は表示できますが、e-Stat 依存の系列は
+                .env に <code className="rounded bg-white px-1.5 py-0.5">ESTAT_APP_ID</code> を設定すると取得可能になります。
                 既存の <code className="rounded bg-white px-1.5 py-0.5">ESTAT_APP_KEY</code> も互換的に読み取ります。
               </div>
             </div>

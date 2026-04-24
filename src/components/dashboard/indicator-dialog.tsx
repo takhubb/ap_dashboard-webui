@@ -135,7 +135,7 @@ export function IndicatorDialog({
             </div>
 
             <div className="text-xs leading-6 text-[var(--muted-foreground)]">
-              出典: {series.sourceName}（e-Stat ベース）
+              出典: {series.sourceName}
             </div>
           </>
         )}

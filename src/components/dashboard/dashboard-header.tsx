@@ -8,7 +8,6 @@ import { Card, CardContent } from "@/components/ui/card";
 type DashboardHeaderProps = {
   lastUpdatedAt: string | null;
   isRefreshing: boolean;
-  missingAppId: boolean;
   onRefresh: () => void;
 };
 
@@ -32,7 +31,6 @@ function formatTimestamp(value: string | null) {
 export function DashboardHeader({
   lastUpdatedAt,
   isRefreshing,
-  missingAppId,
   onRefresh,
 }: DashboardHeaderProps) {
   return (
@@ -49,8 +47,8 @@ export function DashboardHeader({
                 住宅・建設市況ダッシュボード
               </h1>
               <p className="max-w-3xl text-sm leading-7 text-[var(--muted-foreground)] md:text-base">
-                建材メーカー向けに、住宅・建設、マクロ、雇用、消費の主要指標を e-Stat
-                API からまとめて取得し、足元の変化を短時間で把握できるようにした画面です。
+                建材メーカー向けに、住宅・建設、マクロ、雇用、消費の主要指標を
+                公式統計ソースからまとめて取得し、足元の変化を短時間で把握できるようにした画面です。
               </p>
             </div>
           </div>
@@ -71,7 +69,7 @@ export function DashboardHeader({
             <Button
               size="lg"
               onClick={onRefresh}
-              disabled={isRefreshing || missingAppId}
+              disabled={isRefreshing}
               className="w-full justify-center"
             >
               {isRefreshing ? (

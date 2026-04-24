@@ -10,6 +10,10 @@ import {
   createErrorSeries,
   normalizeIndicatorSeries,
 } from "@/lib/estat/normalize";
+import {
+  fetchOfficialIndicatorSeries,
+  type OfficialLoaderState,
+} from "@/lib/official/fetchOfficialIndicators";
 import type {
   DashboardSnapshot,
   IndicatorConfig,
@@ -191,61 +195,89 @@ async function loadTableBundle(
 async function buildIndicatorSeries(
   config: IndicatorConfig,
   forceRefresh: boolean,
+  officialLoaders: OfficialLoaderState,
 ): Promise<IndicatorSeries> {
+  let officialError: Error | null = null;
+
+  try {
+    const officialSeries = await fetchOfficialIndicatorSeries(config, officialLoaders);
+    if (officialSeries) {
+      return officialSeries;
+    }
+  } catch (error) {
+    officialError =
+      error instanceof Error ? error : new Error("公式系列の取得で不明なエラーが発生しました。");
+  }
+
   try {
     const tableId = await resolveTableId(config);
     const bundle = await loadTableBundle(tableId, config.selectors, forceRefresh);
     return normalizeIndicatorSeries(config, bundle);
   } catch (error) {
-    const message =
+    const fallbackMessage =
       error instanceof Error ? error.message : "データ取得時に不明なエラーが発生しました。";
+    const message = officialError
+      ? `${officialError.message} / e-Stat: ${fallbackMessage}`
+      : fallbackMessage;
     return createErrorSeries(config, message);
   }
 }
 
-function buildMissingAppIdSnapshot(message: string): DashboardSnapshot {
-  const indicators = INDICATORS.map((config) => createErrorSeries(config, message));
+function isStaleSeries(series: IndicatorSeries) {
+  if (series.status !== "ok") {
+    return false;
+  }
 
-  return {
-    generatedAt: new Date().toISOString(),
-    lastUpdatedAt: null,
-    indicatorCount: indicators.length,
-    successCount: 0,
-    errorCount: indicators.length,
-    missingAppId: true,
-    message,
-    indicators,
-  };
+  const monthlyMatch = series.lastPeriod.match(/^(\d{4})-(\d{2})$/);
+  if (monthlyMatch) {
+    const latestMonth =
+      Number(monthlyMatch[1]) * 12 + Number(monthlyMatch[2]);
+    const currentMonth = new Date().getUTCFullYear() * 12 + new Date().getUTCMonth() + 1;
+    return currentMonth - latestMonth > 4;
+  }
+
+  const quarterlyMatch = series.lastPeriod.match(/^(\d{4})-Q([1-4])$/);
+  if (quarterlyMatch) {
+    const latestMonth =
+      Number(quarterlyMatch[1]) * 12 + Number(quarterlyMatch[2]) * 3;
+    const currentMonth = new Date().getUTCFullYear() * 12 + new Date().getUTCMonth() + 1;
+    return currentMonth - latestMonth > 8;
+  }
+
+  const yearlyMatch = series.lastPeriod.match(/^(\d{4})$/);
+  if (yearlyMatch) {
+    const latestMonth = Number(yearlyMatch[1]) * 12 + 12;
+    const currentMonth = new Date().getUTCFullYear() * 12 + new Date().getUTCMonth() + 1;
+    return currentMonth - latestMonth > 24;
+  }
+
+  return false;
 }
 
 export async function fetchDashboardSnapshot(forceRefresh = false) {
   const configuration = getEStatConfiguration();
-
-  if (!configuration.isConfigured) {
-    return buildMissingAppIdSnapshot(
-      configuration.message ??
-        "ESTAT_APP_ID が未設定です。.env に appId を設定してください。",
-    );
-  }
 
   const cachedSnapshot = globalThis.__apDashboardSnapshotCache;
   if (!forceRefresh && cachedSnapshot && isFresh(cachedSnapshot, SNAPSHOT_CACHE_TTL_MS)) {
     return cachedSnapshot.value;
   }
 
+  const officialLoaders: OfficialLoaderState = {};
   const series = await Promise.all(
-    INDICATORS.map((config) => buildIndicatorSeries(config, forceRefresh)),
+    INDICATORS.map((config) => buildIndicatorSeries(config, forceRefresh, officialLoaders)),
   );
+  const indicators = series.filter((item) => !isStaleSeries(item));
 
-  const successCount = series.filter((item) => item.status === "ok").length;
+  const successCount = indicators.filter((item) => item.status === "ok").length;
   const snapshot: DashboardSnapshot = {
     generatedAt: new Date().toISOString(),
     lastUpdatedAt: new Date().toISOString(),
-    indicatorCount: series.length,
+    indicatorCount: indicators.length,
     successCount,
-    errorCount: series.length - successCount,
-    missingAppId: false,
-    indicators: series,
+    errorCount: indicators.length - successCount,
+    missingAppId: !configuration.isConfigured,
+    message: configuration.message,
+    indicators,
   };
 
   globalThis.__apDashboardSnapshotCache = {

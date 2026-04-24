@@ -17,7 +17,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "住宅・建設市況ダッシュボード",
-  description: "e-Stat API ベースで住宅・建設市況と主要マクロ指標を確認するダッシュボード",
+  description: "公式統計ソースを横断して住宅・建設市況と主要マクロ指標を確認するダッシュボード",
 };
 
 export default function RootLayout({

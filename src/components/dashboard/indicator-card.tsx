@@ -58,14 +58,14 @@ export function IndicatorCard({ series, windowSize }: IndicatorCardProps) {
       </CardHeader>
       <CardContent className="space-y-4 pt-5">
         {series.status === "error" ? (
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-700">
-              {series.errorMessage}
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-700">
+                {series.errorMessage}
+              </div>
+              <div className="text-xs text-[var(--muted-foreground)]">
+                出典: {series.sourceName}
+              </div>
             </div>
-            <div className="text-xs text-[var(--muted-foreground)]">
-              出典: {series.sourceName}（e-Stat ベース）
-            </div>
-          </div>
         ) : (
           <>
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -113,7 +113,7 @@ export function IndicatorCard({ series, windowSize }: IndicatorCardProps) {
                 <div className="text-xs uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
                   出典
                 </div>
-                <div className="mt-1 font-medium">{series.sourceName}（e-Stat ベース）</div>
+                <div className="mt-1 font-medium">{series.sourceName}</div>
               </div>
             </div>
           </>

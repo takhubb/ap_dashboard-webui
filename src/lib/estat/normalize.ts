@@ -209,6 +209,51 @@ function calculateChange(
   return ((latestValue - referenceValue) / Math.abs(referenceValue)) * 100;
 }
 
+export function buildIndicatorSeriesFromPoints(
+  config: IndicatorConfig,
+  points: IndicatorPoint[],
+  options?: {
+    notes?: string;
+    sourceName?: string;
+  },
+) {
+  const sortedPoints = [...points].sort((left, right) => left.sortKey - right.sortKey);
+
+  if (sortedPoints.length === 0) {
+    throw new Error("系列データに有効な期間が含まれていませんでした。");
+  }
+
+  const latestPoint = [...sortedPoints].reverse().find((point) => point.value !== null);
+  if (!latestPoint) {
+    throw new Error("系列データに有効な数値が含まれていませんでした。");
+  }
+
+  const referencePoint = getReferencePoint(sortedPoints, latestPoint, config.calcMode);
+  const latestValue = latestPoint.value;
+  const previousValue = referencePoint?.value ?? null;
+  const changeType = config.changeType ?? "percent";
+  const changeSuffix: "%" | "pt" = changeType === "difference" ? "pt" : "%";
+
+  return {
+    indicatorId: config.id,
+    category: config.category,
+    title: config.title,
+    sourceName: options?.sourceName ?? config.sourceName,
+    latestValue,
+    previousValue,
+    changeRate: calculateChange(latestValue, previousValue, changeType),
+    changeLabel: getChangeLabel(config.calcMode, changeType, latestPoint.period),
+    changeSuffix,
+    lastPeriod: latestPoint.period,
+    unit: config.unit,
+    chartType: config.chartType ?? "line",
+    notes: options?.notes ?? config.notes,
+    summary: Boolean(config.summary),
+    points: sortedPoints,
+    status: "ok" as const,
+  };
+}
+
 export function buildMetaMaps(classObjects: EStatClassObject[]) {
   return classObjects.reduce<Record<string, Record<string, string>>>((accumulator, item) => {
     accumulator[item.id] = item.values.reduce<Record<string, string>>(
@@ -265,35 +310,7 @@ export function normalizeIndicatorSeries(
     throw new Error("選択条件に一致するデータ系列が見つかりませんでした。");
   }
 
-  const latestPoint = [...points].reverse().find((point) => point.value !== null);
-  if (!latestPoint) {
-    throw new Error("系列データに有効な数値が含まれていませんでした。");
-  }
-
-  const referencePoint = getReferencePoint(points, latestPoint, config.calcMode);
-  const latestValue = latestPoint.value;
-  const previousValue = referencePoint?.value ?? null;
-  const changeType = config.changeType ?? "percent";
-  const changeSuffix: "%" | "pt" = changeType === "difference" ? "pt" : "%";
-
-  return {
-    indicatorId: config.id,
-    category: config.category,
-    title: config.title,
-    sourceName: config.sourceName,
-    latestValue,
-    previousValue,
-    changeRate: calculateChange(latestValue, previousValue, changeType),
-    changeLabel: getChangeLabel(config.calcMode, changeType, latestPoint.period),
-    changeSuffix,
-    lastPeriod: latestPoint.period,
-    unit: config.unit,
-    chartType: config.chartType ?? "line",
-    notes: config.notes,
-    summary: Boolean(config.summary),
-    points,
-    status: "ok" as const,
-  };
+  return buildIndicatorSeriesFromPoints(config, points);
 }
 
 export function createErrorSeries(
