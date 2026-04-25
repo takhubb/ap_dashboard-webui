@@ -132,7 +132,7 @@ function getReferencePoint(
   latestPoint: IndicatorPoint,
   calcMode: IndicatorConfig["calcMode"],
 ) {
-  if (!calcMode || calcMode === "level") {
+  if (!calcMode || calcMode === "level" || calcMode === "latest" || calcMode === "computed") {
     return null;
   }
 
@@ -154,8 +154,12 @@ function getChangeLabel(
   changeType: IndicatorChangeType,
   lastPeriod: string,
 ) {
-  if (!calcMode || calcMode === "level") {
+  if (!calcMode || calcMode === "level" || calcMode === "latest") {
     return "水準";
+  }
+
+  if (calcMode === "computed") {
+    return changeType === "score" ? "スコア" : "独自算出";
   }
 
   const isQuarterly = lastPeriod.includes("-Q");
@@ -215,6 +219,9 @@ export function buildIndicatorSeriesFromPoints(
   options?: {
     notes?: string;
     sourceName?: string;
+    sourceType?: IndicatorConfig["sourceType"];
+    lastUpdatedAt?: string;
+    isComputed?: boolean;
   },
 ) {
   const sortedPoints = [...points].sort((left, right) => left.sortKey - right.sortKey);
@@ -239,18 +246,21 @@ export function buildIndicatorSeriesFromPoints(
     category: config.category,
     title: config.title,
     sourceName: options?.sourceName ?? config.sourceName,
+    sourceType: options?.sourceType ?? config.sourceType ?? "estat",
     latestValue,
     previousValue,
     changeRate: calculateChange(latestValue, previousValue, changeType),
     changeLabel: getChangeLabel(config.calcMode, changeType, latestPoint.period),
     changeSuffix,
     lastPeriod: latestPoint.period,
+    lastUpdatedAt: options?.lastUpdatedAt,
     unit: config.unit,
     chartType: config.chartType ?? "line",
     notes: options?.notes ?? config.notes,
     summary: Boolean(config.summary),
     points: sortedPoints,
     status: "ok" as const,
+    isComputed: options?.isComputed,
   };
 }
 
@@ -269,10 +279,14 @@ export function buildMetaMaps(classObjects: EStatClassObject[]) {
 
 export function selectRows(
   values: EStatValueRow[],
-  selectors: Record<string, string>,
+  selectors: IndicatorConfig["selectors"] = {},
 ) {
   return values.filter((row) =>
     Object.entries(selectors).every(([dimension, expected]) => {
+      if (Array.isArray(expected)) {
+        return expected.includes(row[`@${dimension}`]);
+      }
+
       return row[`@${dimension}`] === expected;
     }),
   );
@@ -322,6 +336,7 @@ export function createErrorSeries(
     category: config.category,
     title: config.title,
     sourceName: config.sourceName,
+    sourceType: config.sourceType ?? "estat",
     latestValue: null,
     previousValue: null,
     changeRate: null,

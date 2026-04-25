@@ -3,14 +3,14 @@
 import { AlertTriangle } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import type { IndicatorSeries } from "@/lib/estat/types";
+import type { DataIssue } from "@/lib/estat/types";
 
 type ErrorSummaryProps = {
-  indicators: IndicatorSeries[];
+  issues: DataIssue[];
 };
 
-export function ErrorSummary({ indicators }: ErrorSummaryProps) {
-  if (indicators.length === 0) {
+export function ErrorSummary({ issues }: ErrorSummaryProps) {
+  if (issues.length === 0) {
     return null;
   }
 
@@ -21,12 +21,12 @@ export function ErrorSummary({ indicators }: ErrorSummaryProps) {
           <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
           <div className="space-y-2">
             <div className="text-sm font-semibold text-amber-900">
-              一部の指標で取得に失敗しました
+              一部の指標で取得・採用を見送りました
             </div>
             <ul className="space-y-1 text-sm leading-6 text-amber-800">
-              {indicators.map((indicator) => (
-                <li key={indicator.indicatorId}>
-                  {indicator.title}: {indicator.errorMessage}
+              {issues.map((issue) => (
+                <li key={`${issue.id}-${issue.reason}`}>
+                  {issue.title}（{issue.sourceName} / {issue.sourceType}）: {issue.reason}
                 </li>
               ))}
             </ul>
@@ -36,4 +36,3 @@ export function ErrorSummary({ indicators }: ErrorSummaryProps) {
     </Card>
   );
 }
-

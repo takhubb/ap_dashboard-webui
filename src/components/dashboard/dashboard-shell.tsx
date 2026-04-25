@@ -7,6 +7,7 @@ import { CATEGORY_LABELS } from "@/config/indicators";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { ErrorSummary } from "@/components/dashboard/error-summary";
 import { IndicatorCard } from "@/components/dashboard/indicator-card";
+import { RegionalDashboard } from "@/components/dashboard/regional-dashboard";
 import { SummaryCards } from "@/components/dashboard/summary-cards";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,11 +26,6 @@ export function DashboardShell({ initialSnapshot }: DashboardShellProps) {
   const [windowSize, setWindowSize] = useState<(typeof RANGE_OPTIONS)[number]>(12);
   const [isPending, startTransition] = useTransition();
 
-  const errorIndicators = useMemo(
-    () => snapshot.indicators.filter((indicator) => indicator.status === "error"),
-    [snapshot.indicators],
-  );
-
   const indicatorsByCategory = useMemo(() => {
     return snapshot.indicators.reduce<Record<IndicatorCategory, typeof snapshot.indicators>>(
       (accumulator, indicator) => {
@@ -38,6 +34,7 @@ export function DashboardShell({ initialSnapshot }: DashboardShellProps) {
       },
       {
         housing: [],
+        regional: [],
         macro: [],
         employment: [],
         consumption: [],
@@ -100,7 +97,7 @@ export function DashboardShell({ initialSnapshot }: DashboardShellProps) {
       )}
 
       <SummaryCards indicators={snapshot.indicators} />
-      <ErrorSummary indicators={errorIndicators} />
+      <ErrorSummary issues={snapshot.dataIssues} />
 
       <Card>
         <CardContent className="space-y-6 p-5">
@@ -139,15 +136,19 @@ export function DashboardShell({ initialSnapshot }: DashboardShellProps) {
               Object.keys(CATEGORY_LABELS) as IndicatorCategory[]
             ).map((category) => (
               <TabsContent key={category} value={category}>
-                <div className="grid gap-4 xl:grid-cols-2">
-                  {indicatorsByCategory[category].map((indicator) => (
-                    <IndicatorCard
-                      key={indicator.indicatorId}
-                      series={indicator}
-                      windowSize={windowSize}
-                    />
-                  ))}
-                </div>
+                {category === "regional" ? (
+                  <RegionalDashboard regional={snapshot.regional} windowSize={windowSize} />
+                ) : (
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {indicatorsByCategory[category].map((indicator) => (
+                      <IndicatorCard
+                        key={indicator.indicatorId}
+                        series={indicator}
+                        windowSize={windowSize}
+                      />
+                    ))}
+                  </div>
+                )}
               </TabsContent>
             ))}
           </Tabs>

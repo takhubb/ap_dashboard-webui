@@ -116,6 +116,12 @@ export function IndicatorCard({ series, windowSize }: IndicatorCardProps) {
                 <div className="mt-1 font-medium">{series.sourceName}</div>
               </div>
             </div>
+
+            {series.isStale && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                {series.staleReason ?? "最新期間が古いため参考値です。"}
+              </div>
+            )}
           </>
         )}
       </CardContent>

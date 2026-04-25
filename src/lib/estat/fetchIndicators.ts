@@ -10,17 +10,18 @@ import {
   createErrorSeries,
   normalizeIndicatorSeries,
 } from "@/lib/estat/normalize";
-import {
-  fetchOfficialIndicatorSeries,
-  type OfficialLoaderState,
-} from "@/lib/official/fetchOfficialIndicators";
+import { fetchDashboardIndicatorSeries } from "@/lib/dashboard/fetchDashboardIndicator";
 import type {
   DashboardSnapshot,
+  DataIssue,
   IndicatorConfig,
   IndicatorSeries,
+  IndicatorSelectorValue,
   StatisticsTableSummary,
   TableBundle,
 } from "@/lib/estat/types";
+import { checkFreshness } from "@/lib/freshness";
+import { fetchRegionalDashboard } from "@/lib/regional/fetchRegionalDashboard";
 
 const SNAPSHOT_CACHE_TTL_MS = 15 * 60 * 1000;
 const TABLE_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -74,11 +75,11 @@ function isFresh(cacheEntry: CacheEntry<unknown> | undefined, ttlMs: number) {
 
 function buildTableCacheKey(
   tableId: string,
-  selectors: Record<string, string>,
+  selectors: Record<string, IndicatorSelectorValue>,
 ) {
   const serializedSelectors = Object.entries(selectors)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}:${value}`)
+    .map(([key, value]) => `${key}:${Array.isArray(value) ? value.join(",") : value}`)
     .join("|");
 
   return `${tableId}::${serializedSelectors}`;
@@ -94,7 +95,7 @@ function sortTableCandidates(tables: StatisticsTableSummary[]) {
 
 async function searchTableId(config: IndicatorConfig) {
   const tables = await getStatsList({
-    searchWord: config.statSearchKeyword,
+    searchWord: config.statSearchKeyword ?? config.searchKeyword ?? config.title,
     statsCode: config.statsCode,
     limit: 30,
   });
@@ -151,7 +152,7 @@ async function loadMetaMaps(tableId: string, forceRefresh: boolean) {
 
 async function loadTableBundle(
   tableId: string,
-  selectors: Record<string, string>,
+  selectors: Record<string, IndicatorSelectorValue>,
   forceRefresh: boolean,
 ) {
   const cacheKey = buildTableCacheKey(tableId, selectors);
@@ -195,63 +196,55 @@ async function loadTableBundle(
 async function buildIndicatorSeries(
   config: IndicatorConfig,
   forceRefresh: boolean,
-  officialLoaders: OfficialLoaderState,
 ): Promise<IndicatorSeries> {
-  let officialError: Error | null = null;
-
   try {
-    const officialSeries = await fetchOfficialIndicatorSeries(config, officialLoaders);
-    if (officialSeries) {
-      return officialSeries;
+    if (config.sourceType === "dashboard") {
+      const dashboardSeries = await fetchDashboardIndicatorSeries(config);
+      if (dashboardSeries) {
+        return dashboardSeries;
+      }
     }
   } catch (error) {
-    officialError =
-      error instanceof Error ? error : new Error("公式系列の取得で不明なエラーが発生しました。");
+    const message =
+      error instanceof Error ? error.message : "統計ダッシュボード API の取得に失敗しました。";
+    return createErrorSeries(config, message);
   }
 
   try {
     const tableId = await resolveTableId(config);
-    const bundle = await loadTableBundle(tableId, config.selectors, forceRefresh);
+    const bundle = await loadTableBundle(tableId, config.selectors ?? {}, forceRefresh);
     return normalizeIndicatorSeries(config, bundle);
   } catch (error) {
-    const fallbackMessage =
+    const message =
       error instanceof Error ? error.message : "データ取得時に不明なエラーが発生しました。";
-    const message = officialError
-      ? `${officialError.message} / e-Stat: ${fallbackMessage}`
-      : fallbackMessage;
     return createErrorSeries(config, message);
   }
 }
 
-function isStaleSeries(series: IndicatorSeries) {
+function getSeriesFreshnessIssue(series: IndicatorSeries, config: IndicatorConfig) {
   if (series.status !== "ok") {
-    return false;
+    return null;
   }
 
-  const monthlyMatch = series.lastPeriod.match(/^(\d{4})-(\d{2})$/);
-  if (monthlyMatch) {
-    const latestMonth =
-      Number(monthlyMatch[1]) * 12 + Number(monthlyMatch[2]);
-    const currentMonth = new Date().getUTCFullYear() * 12 + new Date().getUTCMonth() + 1;
-    return currentMonth - latestMonth > 4;
-  }
+  const freshness = checkFreshness(series.lastPeriod, config.freshnessPolicy);
+  return freshness.isStale
+    ? freshness.reason ?? "最新期間が古いため除外しました。"
+    : null;
+}
 
-  const quarterlyMatch = series.lastPeriod.match(/^(\d{4})-Q([1-4])$/);
-  if (quarterlyMatch) {
-    const latestMonth =
-      Number(quarterlyMatch[1]) * 12 + Number(quarterlyMatch[2]) * 3;
-    const currentMonth = new Date().getUTCFullYear() * 12 + new Date().getUTCMonth() + 1;
-    return currentMonth - latestMonth > 8;
-  }
-
-  const yearlyMatch = series.lastPeriod.match(/^(\d{4})$/);
-  if (yearlyMatch) {
-    const latestMonth = Number(yearlyMatch[1]) * 12 + 12;
-    const currentMonth = new Date().getUTCFullYear() * 12 + new Date().getUTCMonth() + 1;
-    return currentMonth - latestMonth > 24;
-  }
-
-  return false;
+function buildDataIssue(
+  config: IndicatorConfig,
+  reason: string,
+  severity: DataIssue["severity"],
+): DataIssue {
+  return {
+    id: config.id,
+    title: config.title,
+    sourceName: config.sourceName,
+    sourceType: config.sourceType ?? "estat",
+    reason,
+    severity,
+  };
 }
 
 export async function fetchDashboardSnapshot(forceRefresh = false) {
@@ -262,11 +255,44 @@ export async function fetchDashboardSnapshot(forceRefresh = false) {
     return cachedSnapshot.value;
   }
 
-  const officialLoaders: OfficialLoaderState = {};
   const series = await Promise.all(
-    INDICATORS.map((config) => buildIndicatorSeries(config, forceRefresh, officialLoaders)),
+    INDICATORS.map((config) => buildIndicatorSeries(config, forceRefresh)),
   );
-  const indicators = series.filter((item) => !isStaleSeries(item));
+  const dataIssues: DataIssue[] = [];
+  const indicators = series.flatMap((item, index) => {
+    const config = INDICATORS[index];
+
+    if (item.status === "error") {
+      dataIssues.push(
+        buildDataIssue(
+          config,
+          item.errorMessage ?? "データ取得時に不明なエラーが発生しました。",
+          "error",
+        ),
+      );
+      return [item];
+    }
+
+    const freshnessIssue = getSeriesFreshnessIssue(item, config);
+    if (!freshnessIssue) {
+      return [item];
+    }
+
+    const staleItem: IndicatorSeries = {
+      ...item,
+      isStale: true,
+      staleReason: freshnessIssue,
+    };
+
+    if (config.staleBehavior === "showWarning") {
+      dataIssues.push(buildDataIssue(config, freshnessIssue, "stale"));
+      return [staleItem];
+    }
+
+    return [];
+  });
+  const regional = await fetchRegionalDashboard(forceRefresh);
+  dataIssues.push(...regional.issues);
 
   const successCount = indicators.filter((item) => item.status === "ok").length;
   const snapshot: DashboardSnapshot = {
@@ -278,6 +304,8 @@ export async function fetchDashboardSnapshot(forceRefresh = false) {
     missingAppId: !configuration.isConfigured,
     message: configuration.message,
     indicators,
+    regional: regional.snapshot,
+    dataIssues,
   };
 
   globalThis.__apDashboardSnapshotCache = {

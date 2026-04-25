@@ -1,6 +1,7 @@
 import type {
   EStatClassObject,
   EStatValueRow,
+  IndicatorSelectorValue,
   StatisticsTableSummary,
 } from "@/lib/estat/types";
 
@@ -193,7 +194,7 @@ export async function getMetaInfo(statsDataId: string) {
   return normalized;
 }
 
-function buildSelectorParams(selectors?: Record<string, string>) {
+function buildSelectorParams(selectors?: Record<string, IndicatorSelectorValue>) {
   if (!selectors) {
     return {};
   }
@@ -202,7 +203,7 @@ function buildSelectorParams(selectors?: Record<string, string>) {
     (params, [dimension, value]) => {
       const normalizedDimension =
         dimension.charAt(0).toUpperCase() + dimension.slice(1);
-      params[`cd${normalizedDimension}`] = value;
+      params[`cd${normalizedDimension}`] = Array.isArray(value) ? value.join(",") : value;
       return params;
     },
     {},
@@ -211,29 +212,58 @@ function buildSelectorParams(selectors?: Record<string, string>) {
 
 export async function getStatsData(
   statsDataId: string,
-  selectors?: Record<string, string>,
+  selectors?: Record<string, IndicatorSelectorValue>,
 ) {
-  const payload = await requestEStat<JsonObject>("getStatsData", {
-    statsDataId,
-    limit: 2000,
-    metaGetFlg: "N",
-    ...buildSelectorParams(selectors),
-  });
+  const limit = 100_000;
+  let startPosition = 1;
+  let title = "";
+  let statisticsName = "";
+  const values: EStatValueRow[] = [];
 
-  const root = payload.GET_STATS_DATA;
-  const statisticalData =
-    isRecord(root) && isRecord(root.STATISTICAL_DATA) ? root.STATISTICAL_DATA : undefined;
-  const tableInfo =
-    statisticalData && isRecord(statisticalData.TABLE_INF)
-      ? statisticalData.TABLE_INF
-      : undefined;
-  const dataInf =
-    statisticalData && isRecord(statisticalData.DATA_INF) ? statisticalData.DATA_INF : undefined;
-  const values = asArray<unknown>(dataInf?.VALUE).filter(isRecord) as EStatValueRow[];
+  while (true) {
+    const payload = await requestEStat<JsonObject>("getStatsData", {
+      statsDataId,
+      limit,
+      startPosition,
+      metaGetFlg: "N",
+      ...buildSelectorParams(selectors),
+    });
+
+    const root = payload.GET_STATS_DATA;
+    const statisticalData =
+      isRecord(root) && isRecord(root.STATISTICAL_DATA) ? root.STATISTICAL_DATA : undefined;
+    const tableInfo =
+      statisticalData && isRecord(statisticalData.TABLE_INF)
+        ? statisticalData.TABLE_INF
+        : undefined;
+    const dataInf =
+      statisticalData && isRecord(statisticalData.DATA_INF) ? statisticalData.DATA_INF : undefined;
+    const resultInf =
+      statisticalData && isRecord(statisticalData.RESULT_INF)
+        ? statisticalData.RESULT_INF
+        : undefined;
+    const pageValues = asArray<unknown>(dataInf?.VALUE).filter(isRecord) as EStatValueRow[];
+
+    title ||= textFromField(tableInfo?.TITLE);
+    statisticsName ||= textFromField(tableInfo?.STATISTICS_NAME);
+    values.push(...pageValues);
+
+    const nextKeyValue = resultInf?.NEXT_KEY ?? dataInf?.NEXT_KEY;
+    const nextKey =
+      typeof nextKeyValue === "string" || typeof nextKeyValue === "number"
+        ? Number(nextKeyValue)
+        : NaN;
+
+    if (!Number.isFinite(nextKey) || nextKey <= 0 || pageValues.length === 0) {
+      break;
+    }
+
+    startPosition = nextKey;
+  }
 
   return {
-    title: textFromField(tableInfo?.TITLE),
-    statisticsName: textFromField(tableInfo?.STATISTICS_NAME),
+    title,
+    statisticsName,
     values,
   };
 }
